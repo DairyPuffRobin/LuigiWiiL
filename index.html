@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+
                 <style>body {
     margin: 0;
     padding: 0;
@@ -389,6 +391,18 @@ canvas {
         .warning-text { font-size: 1.4rem; line-height: 1.6; margin-bottom: 40px; color: #e0e0e0; }
         .press-a-btn { font-size: 1.8rem; color: var(--wii-glow-cyan); animation: pulseText 1.5s infinite; font-weight: bold; }
 
+        .pause-animations * {
+    animation-play-state: paused !important;
+}
+*/
+
+.press-a-btn { font-size: 1.8rem; color: var(--wii-glow-cyan); animation: pulseText 1.5s infinite; font-weight: bold; }
+
+        /* ADDED THIS CSS CLASS: */
+        .pause-animations * {
+            animation-play-state: paused !important;
+        }
+
         /* ==========================================================================
            10. IFRAME APP LAYER
            ========================================================================== */
@@ -397,7 +411,33 @@ canvas {
             background: #fff; display: none; flex-direction: column; opacity: 0; transition: opacity 0.3s;
         }
         #app-layer.active { display: flex; opacity: 1; }
-        #app-iframe { flex: 1; border: none; width: 100%; height: 100%; background: #ffffff; }
+        
+        /* ADDED THESE IFRAME OPTIMIZATIONS: */
+        #app-iframe { 
+            flex: 1; 
+            border: none; 
+            width: 100%; 
+            height: 100%; 
+            background: #000000; 
+            transform: translateZ(0); 
+            will-change: transform; 
+        }
+        // When opening the game iframe:
+document.getElementById('app-layer').classList.add('active');
+
+document.getElementById('top-bar').style.display = 'none';
+document.getElementById('main-area').style.display = 'none';
+document.getElementById('bottom-bar').style.display = 'none';
+document.getElementById('wii-screen').style.background = 'black'; // remove grid dots temporarily
+        #app-iframe { 
+    flex: 1; 
+    border: none; 
+    width: 100%; 
+    height: 100%; 
+    background: #000000; /* Better for heavy games than white */
+    transform: translateZ(0); /* FORCES HARDWARE ACCELERATION */
+    will-change: transform; /* Tells the browser to dedicate GPU memory to this */
+}
         
         #os-home-overlay {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -832,257 +872,207 @@ Play responsibly
          * ==========================================================================
          */
 
-        const generateGameContent = (slug) => {
-    const url = `https://mtreasur0133-tech.github.io/gnmath-html-games/games/${encodeURIComponent(slug)}.html`;
+       const generateGameContent = (slug, isOGC = false) => {
+    const url = isOGC 
+        ? `https://raw.githubusercontent.com/TheOGCoders/TheOGC/main/unblocked/${slug}.html`
+        : `https://mtreasur0133-tech.github.io/gnmath-html-games/games/${encodeURIComponent(slug)}.html`;
+    
+    const frameId = `frame_${slug.replace(/[^a-z0-9]/gi, '_')}`;
+
     return `
-        <div style="position:relative; width:100%; height:100%; background:#000; overflow:hidden;">
-            <iframe class="game-frame" src="${url}" allow="autoplay; fullscreen; pointer-lock" 
-                    style="width:100%; height:100%; border:none; opacity:0; transition: opacity 0.5s;">
-            </iframe>
-            <div class="os-loader" style="position:absolute; top:0; left:0; width:100%; height:100%; background:#050505; color:#0f0; padding:20px; box-sizing:border-box; font-family:monospace; z-index:10; transition: opacity 0.5s ease;">
-                <div class="boot-text">
-                    <span style="color:#fff;">LuiGi OS Virtual Sandbox v1.0.4</span><br>
-                    <span>Initializing GitHub .io Handshake...</span><br>
-                    <span>Loading: ${slug}</span>
-                </div>
+        <div style="position:relative; width:100%; height:100%; background:#000;">
+            <iframe id="${frameId}" style="width:100%; height:100%; border:none; opacity:0;" allow="autoplay; fullscreen; pointer-lock"></iframe>
+            <div class="os-loader" style="position:absolute; top:0; left:0; width:100%; height:100%; background:#000; color:#0f0; display:flex; align-items:center; justify-content:center; font-family:monospace;">
+                <span class="status-text">DECODING OGC WRAPPER...</span>
             </div>
             <img src="x" style="display:none;" onerror="
-                const frame = this.parentElement.querySelector('.game-frame');
-                const loader = this.parentElement.querySelector('.os-loader');
-                frame.onload = () => {
-                    setTimeout(() => {
-                        loader.style.opacity = '0';
-                        setTimeout(() => loader.style.display = 'none', 500);
-                        frame.style.opacity = '1';
-                    }, 800);
-                };
+                (async () => {
+                    const frame = document.getElementById('${frameId}');
+                    const status = frame.parentElement.querySelector('.status-text');
+                    
+                    try {
+                        const response = await fetch('${url}');
+                        const text = await response.text();
+                        
+                        // REGEX: Find the 'src' attribute inside the iframe tag in the OGC wrapper
+                        const match = text.match(/<iframe.*?src=['&quot;](.*?)['&quot;]/i);
+                        
+                        if (match && match[1]) {
+                            // If we found a nested URL, load THAT directly
+                            frame.src = match[1];
+                            status.innerText = 'REDIRECTING TO SOURCE...';
+                        } else {
+                            // If it's a normal game file, inject the code
+                            const doc = frame.contentWindow.document;
+                            doc.open(); doc.write(text); doc.close();
+                        }
+                        
+                        frame.onload = () => {
+                            frame.style.opacity = '1';
+                            frame.parentElement.querySelector('.os-loader').style.display = 'none';
+                        };
+                    } catch (e) {
+                        status.innerText = 'CONNECTION REFUSED BY HOST';
+                    }
+                })();
             ">
         </div>`;
 };
 
 
         window.AppHTMLPayloads = {
-            Games: [
-                    { id: 'ages-of-conflict', title: 'Ages of Conflict', publisher: 'mtreasur0133', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '45MB', arch: 'HTML5', description: 'A versatile map-based world simulation game where you spawn and observe custom nations.', content: generateGameContent('Ages of Conflict') },
-        { id: 'angry-birds', title: 'Angry Birds', publisher: 'Rovio', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Use the unique powers of the Angry Birds to destroy the greedy pigs\' defenses!', content: generateGameContent('Angry Birds') },
-        { id: 'baldis-basics', title: "Baldi's Basics Plus", publisher: 'Basically Games', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '85MB', arch: 'HTML5', description: 'A survival horror roguelike that parodies 90s edutainment. Collect all the notebooks!', content: generateGameContent("Baldi's Basics Plus") },
-        { id: 'basket-battle', title: 'Basket Battle', publisher: 'MarketJS', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Physics-based basketball action. Throw the ball and your character to score.', content: generateGameContent('Basket Battle') },
-        { id: 'basket-bros', title: 'Basket Bros', publisher: 'Blue Wizard', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '22MB', arch: 'HTML5', description: 'Fast-paced 1v1 basketball. Dunk on your friends in this arcade classic.', content: generateGameContent('Basket Bros') },
+            Games: [{ id: 'ages-of-conflict', title: 'Ages of Conflict', publisher: 'JoySpark Games', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/agesofconflict.png', price: 'FREE', size: '45MB', arch: 'HTML5', description: 'A versatile map-based world simulation game where you spawn and observe custom nations.', content: generateGameContent('Ages of Conflict') }, 
+            { id: 'subwaysurfers', title: 'Subway Surfers', publisher: 'SYBO Games', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/subwaysurfers.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'Dodge trains and escape the inspector in this endless runner!', content: generateGameContent('subwaysurfers', 'https://x12maybeheat.vercel.app/games/subwaysurfers/index.html') },
+        { id: 'minecraft', title: 'Minecraft 1.8', publisher: 'Mojang', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/minecraft.png', price: 'FREE', size: '50MB', arch: 'HTML5', description: 'The classic sandbox experience. Build, craft, and survive.', content: generateGameContent('minecraft', 'https://buttertoasty.github.io/games1/games/Minecraft%201.8/index.html') },
+        { id: 'block-blast', title: 'Block Blast', publisher: 'Hungry Studio', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'A block puzzle game that will challenge your brain.', content: generateGameContent('block-blast', 'https://block-blast-three.vercel.app') },
+        { id: 'fruitninja', title: 'Fruit Ninja', publisher: 'Halfbrick', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/fruitninja.png', price: 'FREE', size: '20MB', arch: 'HTML5', description: 'Slice fruit, avoid bombs!', content: generateGameContent('fruitninja', 'https://x12maybeheat.vercel.app/games/fruitninja/index.html') },
+        { id: 'crossyroad', title: 'Crossy Road', publisher: 'Hipster Whale', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/crossyroad.png', price: 'FREE', size: '25MB', arch: 'HTML5', description: 'Why did the chicken cross the road?', content: generateGameContent('crossyroad', 'https://x12maybeheat.vercel.app/games/crossy/index.html') },
+        { id: 'drivemad', title: 'Drive Mad', publisher: 'Martin Magni', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/drivemad.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Drive your car to the finish line in one piece!', content: generateGameContent('drivemad', 'https://mathpunch.github.io/shark/') },
+        { id: 'mario64', title: 'Super Mario 64', publisher: 'Nintendo', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/mario64.png', price: 'FREE', size: '12MB', arch: 'N64-Emulated', description: 'The legendary 3D platformer in your browser.', content: generateGameContent('mario64', 'https://mathadventure1.github.io/sm64/sm64/index.html') },
+        { id: 'retrobowl', title: 'Retro Bowl', publisher: 'New Star Games', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/retrobowl.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Manage your NFL team and win the Super Bowl.', content: generateGameContent('retrobowl', 'https://x12maybeheat.vercel.app/games/retro-bowl/index.html') },
+        { id: 'angry-birds', title: 'Angry Birds', publisher: 'Rovio', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/angrybirds.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Use the unique powers of the Angry Birds to destroy the greedy pigs\' defenses!', content: generateGameContent('Angry Birds') },
+        { id: 'baldis-basics', title: "Baldi's Basics Plus", publisher: 'Basically Games', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/baldisbasics.png', price: 'FREE', size: '85MB', arch: 'HTML5', description: 'A survival horror roguelike that parodies 90s edutainment. Collect all the notebooks!', content: generateGameContent("Baldi's Basics Plus") },
+        { id: 'basket-battle', title: 'Basket Battle', publisher: 'MarketJS', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/basketbattle.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Physics-based basketball action. Throw the ball and your character to score.', content: generateGameContent('Basket Battle') },
+        { id: 'basket-bros', title: 'Basket Bros', publisher: 'Blue Wizard', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/basketbros.png', price: 'FREE', size: '22MB', arch: 'HTML5', description: 'Fast-paced 1v1 basketball. Dunk on your friends in this arcade classic.', content: generateGameContent('Basket Bros') },
         { id: 'basket-random', title: 'Basket Random', publisher: 'RHM Interactive', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/basketrandom.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Wacky physics basketball where everything is random. Just press one button!', content: generateGameContent('Basket Random') },
-        { id: 'bitlife', title: 'BitLife', publisher: 'Candywriter', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'A text-based life simulator. How will you live your BitLife?', content: generateGameContent('BitLife') },
-        { id: 'bloxorz', title: 'Bloxorz', publisher: 'Miniclip', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'The classic puzzle game. Roll the block to the hole without falling off.', content: generateGameContent('Bloxorz') },
-        { id: 'buckshot-roulette', title: 'Buckshot Roulette', publisher: 'Mike Klubnika', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'A high-stakes game of Russian Roulette with a 12-gauge shotgun.', content: generateGameContent('Buckshot Roulette') },
+        { id: 'bitlife', title: 'BitLife', publisher: 'Candywriter', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/bitlife.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'A text-based life simulator. How will you live your BitLife?', content: generateGameContent('BitLife') },
+        { id: 'bloxorz', title: 'Bloxorz', publisher: 'Miniclip', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/bloxorz.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'The classic puzzle game. Roll the block to the hole without falling off.', content: generateGameContent('Bloxorz') },
+        { id: 'buckshot-roulette', title: 'Buckshot Roulette', publisher: 'Mike Klubnika', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/buckshotroulette.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'A high-stakes game of Russian Roulette with a 12-gauge shotgun.', content: generateGameContent('Buckshot Roulette') },
         { id: 'drift-boss', title: 'Drift Boss', publisher: 'MarketJS', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/driftboss.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Master the art of drifting on an endless zigzag road.', content: generateGameContent('Drift Boss') },
-        { id: 'eaglercraft', title: 'EaglercraftX', publisher: 'lax1dude', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '50MB', arch: 'HTML5', description: 'Minecraft 1.8.8 in your browser. Play multiplayer or singleplayer.', content: generateGameContent('EaglercraftX') },
+        { id: 'eaglercraft', title: 'EaglercraftX', publisher: 'lax1dude', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/eaglercraft.png', price: 'FREE', size: '50MB', arch: 'HTML5', description: 'Minecraft 1.8.8 in your browser. Play multiplayer or singleplayer.', content: generateGameContent('EaglercraftX') },
         { id: 'fnaf1', title: 'Five Nights at Freddy\'s', publisher: 'Scott Cawthon', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/fnaf1.png', price: 'FREE', size: '124MB', arch: 'HTML5', description: 'Can you survive five nights at Freddy Fazbear\'s Pizza?', content: generateGameContent('Five Nights at Freddy\'s') },
         { id: 'fnaf2', title: 'Five Nights at Freddy\'s 2', publisher: 'Scott Cawthon', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/fnaf2.png', price: 'FREE', size: '156MB', arch: 'HTML5', description: 'New animatronics and no doors. Good luck.', content: generateGameContent('Five Nights at Freddy\'s 2') },
         { id: 'fnaf3', title: 'Five Nights at Freddy\'s 3', publisher: 'Scott Cawthon', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/fnaf3.png', price: 'FREE', size: '110MB', arch: 'HTML5', description: 'Thirty years later, the horror returns.', content: generateGameContent('Five Nights at Freddy\'s 3') },
         { id: 'fnaf4', title: 'Five Nights at Freddy\'s 4', publisher: 'Scott Cawthon', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/fnaf4.png', price: 'FREE', size: '180MB', arch: 'HTML5', description: 'The terror follows you home.', content: generateGameContent('Five Nights at Freddy\'s 4') },
         { id: 'fnafsl', title: 'FNAF: Sister Location', publisher: 'Scott Cawthon', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/fnafsl.png', price: 'FREE', size: '210MB', arch: 'HTML5', description: 'Deep underground in Circus Baby\'s Pizza World.', content: generateGameContent('Five Nights at Freddy\'s_ Sister Location') },
         { id: 'fnafucn', title: 'Ultimate Custom Night', publisher: 'Scott Cawthon', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/fnafucn.png', price: 'FREE', size: '280MB', arch: 'HTML5', description: 'The ultimate FNAF mashup with 50 characters.', content: generateGameContent('Five Nights at Freddy\'s_ Ultimate Custom Night') },
-        { id: 'granny', title: 'Granny', publisher: 'DVloper', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '60MB', arch: 'HTML5', description: 'Granny keeps you locked in her house. You have 5 days to escape.', content: generateGameContent('Granny') },
-        { id: 'pong-wars', title: 'Pong Wars', publisher: 'Community', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '2MB', arch: 'HTML5', description: 'The ultimate battle between day and night in a circular arena.', content: generateGameContent('pong wars') }
-    
+        { id: 'granny', title: 'Granny', publisher: 'DVloper', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/granny.png', price: 'FREE', size: '60MB', arch: 'HTML5', description: 'Granny keeps you locked in her house. You have 5 days to escape.', content: generateGameContent('Granny') },
+        { id: 'pong-wars', title: 'Pong Wars', publisher: 'Community', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/pongwars.png', price: 'FREE', size: '2MB', arch: 'HTML5', description: 'The ultimate battle between day and night in a circular arena.', content: generateGameContent('pong wars') },
+        { id: 'a-dance-of-fire-and-ice', title: 'A Dance of Fire and Ice', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '25MB', arch: 'HTML5', description: 'A strict one-button rhythm game.', content: generateGameContent('a-dance-of-fire-and-ice', true) },
+        { id: 'a-small-world-cup', title: 'A Small World Cup', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/asmallworldcup.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Fast-paced puppet soccer.', content: generateGameContent('a-small-world-cup', true) },
+        { id: 'achievement-unlocked', title: 'Achievement Unlocked', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'Flash-Emu', description: 'The game where doing anything is an achievement.', content: generateGameContent('achievement-unlocked', true) },
+        { id: 'adventure-drivers', title: 'Adventure Drivers', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Race and upgrade your car across islands.', content: generateGameContent('adventure-drivers', true) },
+        { id: 'alien-hominid', title: 'Alien Hominid', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'Flash-Emu', description: 'Classic run-and-gun action.', content: generateGameContent('alien-hominid', true) },
+        { id: 'amazing-rope-police', title: 'Amazing Rope Police', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '30MB', arch: 'HTML5', description: 'Open-world superhero simulation.', content: generateGameContent('amazing-rope-police', true) },
+        { id: 'amidst-the-clouds', title: 'Amidst the Clouds', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Relaxing aerial exploration.', content: generateGameContent('amidst-the-clouds', true) },
+        { id: 'aquapark-io', title: 'Aquapark.io', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Slide to the end of the water park!', content: generateGameContent('aquapark-io', true) },
+        { id: 'archery-world-tour', title: 'Archery World Tour', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Test your aim in various locations.', content: generateGameContent('archery-world-tour', true) },
+        { id: 'aspiring-artist', title: 'Aspiring Artist', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'Create and showcase your digital art.', content: generateGameContent('aspiring-artist', true) },
+        { id: 'awesome-tanks-2', title: 'Awesome Tanks 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/awesometanks2.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Destructive tank warfare.', content: generateGameContent('awesome-tanks-2', true) },
+        { id: 'bad-ice-cream-2', title: 'Bad Ice Cream 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/badicecream2.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Nitrome classic: collect fruit, break ice.', content: generateGameContent('bad-ice-cream-2', true) },
+        { id: 'baldis-basics-camping-trip', title: 'Baldis Basics Camping', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '25MB', arch: 'HTML5', description: 'Go camping with Baldi... if you dare.', content: generateGameContent('baldis-basics-camping-trip', true) },
+        { id: 'basketball-legends', title: 'Basketball Legends', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Play as the greats of basketball.', content: generateGameContent('basketball-legends', true) },
+        { id: 'basketball-stars', title: 'Basketball Stars', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/basketballstars.png', price: 'FREE', size: '18MB', arch: 'HTML5', description: 'Competitive 1v1 basketball action.', content: generateGameContent('basketball-stars', true) },
+        { id: 'blockpost', title: 'Blockpost', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '40MB', arch: 'HTML5', description: 'Tactical block-based shooter.', content: generateGameContent('blockpost', true) },
+        { id: 'blocky-snakes', title: 'Blocky Snakes', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: '3D take on the classic Snake game.', content: generateGameContent('blocky-snakes', true) },
+        { id: 'bloons-td2', title: 'Bloons TD 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'Flash-Emu', description: 'Classic tower defense with balloons.', content: generateGameContent('bloons-td2', true) },
+        { id: 'bloxors', title: 'Bloxors', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'Flash-Emu', description: 'Manipulate the block to reach the goal.', content: generateGameContent('bloxors', true) },
+        { id: 'bob-the-robber-2', title: 'Bob the Robber 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Help Bob pull off the perfect heist.', content: generateGameContent('bob-the-robber-2', true) },
+        { id: 'boxing-random', title: 'Boxing Random', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Wacky physics boxing challenges.', content: generateGameContent('boxing-random', true) },
+        { id: 'breaking-the-bank', title: 'Breaking the Bank', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'Flash-Emu', description: 'The first Henry Stickmin adventure.', content: generateGameContent('breaking-the-bank', true) },
+        { id: 'cannon-basketball-4', title: 'Cannon Basketball 4', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Launch basketballs with a cannon.', content: generateGameContent('cannon-basketball-4', true) },
+        { id: 'cars-simulator', title: 'Cars Simulator', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'Drive various cars in a sandbox.', content: generateGameContent('cars-simulator', true) },
+        { id: 'chrome-dino', title: 'Chrome Dino', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '1MB', arch: 'HTML5', description: 'The famous offline browser game.', content: generateGameContent('chrome-dino', true) },
     ],
     Shop: [
-         {
-        id: 'infiltratingtheairship',
-        title: 'Infiltrating the Airship',
-        publisher: 'PuffballsUnited',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/infiltratingtheairship.png',
-        price: 'FREE',
-        size: '45MB',
-        arch: 'HTML5 Port',
-        description: 'Henry is recruited by the government to take down the infamous Toppat Clan aboard their heavily guarded flying airship.',
-        content: generateGameContent('infiltratingtheairship')
-    },
-    {
-        id: 'fleeingthecomplex',
-        title: 'Fleeing the Complex',
-        publisher: 'PuffballsUnited',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/fleeingthecomplex.png',
-        price: 'FREE',
-        size: '50MB',
-        arch: 'HTML5 Port',
-        description: 'Locked in a high-security prison hidden in snowy mountains, Henry must team up with Ellie to find a way to escape The Wall.',
-        content: generateGameContent('fleeingthecomplex')
-    },
-    {
-        id: 'ovo',
-        title: 'OvO',
-        publisher: 'Dedra Games',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/ovo.png',
-        price: 'FREE',
-        size: '12MB',
-        arch: 'HTML5',
-        description: 'A fast-paced platforming game focusing on speedrunning. Chain together jumps, slides, and dives to beat levels as fast as possible.',
-        content: generateGameContent('ovo')
-    },
-
-    // --- STRATEGY, SIMULATION & TOWER DEFENSE ---
-    {
-        id: 'bloonstd1',
-        title: 'Bloons TD 1',
-        publisher: 'Ninja Kiwi',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/bloonstd1.png',
-        price: 'FREE',
-        size: '10MB',
-        arch: 'HTML5 Port',
-        description: 'The game that birthed the legendary tower defense series. Place dart monkeys along the track to pop the incoming waves of bloons.',
-        content: generateGameContent('bloonstd1')
-    },
-    {
-        id: 'bloonstd2',
-        title: 'Bloons TD 2',
-        publisher: 'Ninja Kiwi',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/bloonstd2.png',
-        price: 'FREE',
-        size: '12MB',
-        arch: 'HTML5 Port',
-        description: 'The bloons are back! Defend your base with new monkey towers, upgraded dart monkeys, and better popping power.',
-        content: generateGameContent('bloonstd2')
-    },
-    {
-        id: 'bloonstd4',
-        title: 'Bloons TD 4',
-        publisher: 'Ninja Kiwi',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/bloonstd4.png',
-        price: 'FREE',
-        size: '25MB',
-        arch: 'HTML5 Port',
-        description: 'A massive upgrade to the classic tower defense. Features incredible new graphics, the Super Monkey, and brutal new bloon types.',
-        content: generateGameContent('bloonstd4')
-    },
-    {
-        id: 'tinyfishing',
-        title: 'Tiny Fishing',
-        publisher: 'BuyHTML5',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/tinyfishing.png',
-        price: 'FREE',
-        size: '14MB',
-        arch: 'HTML5',
-        description: 'Cast your line, reach the depths, and catch as many fish as you can on the way up. Upgrade your gear to catch legendary fish!',
-        content: generateGameContent('tinyfishing')
-    },
-    {
-        id: 'monkeymart',
-        title: 'Monkey Mart',
-        publisher: 'TinyDobbins',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/monkeymart.png',
-        price: 'FREE',
-        size: '18MB',
-        arch: 'WebGL',
-        description: 'Manage a supermarket run entirely by monkeys! Plant bananas, stock the shelves, hire helpers, and grow your tiny business.',
-        content: generateGameContent('monkeymart')
-    },
-
-    // --- INDIE PORT CLASSICS ---
-    {
-        id: 'baldisbasics',
-        title: 'Baldis Basics',
-        publisher: 'Mystman12',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/baldi.png',
-        price: 'FREE',
-        size: '65MB',
-        arch: 'Unity WebGL',
-        description: 'A meta-horror game disguised as 90s educational software. Collect all 7 notebooks and escape the school before Baldi catches you.',
-        content: generateGameContent('baldisbasics')
-    },
-    {
-        id: 'mario64',
-        title: 'Super Mario 64',
-        publisher: 'Nintendo / Port',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/mario64.png',
-        price: 'FREE',
-        size: '40MB',
-        arch: 'WASM Port',
-        description: 'A flawless web port of the legendary 3D platformer. Jump into paintings, collect power stars, and defeat Bowser.',
-        content: generateGameContent('mario64')
-    },
-    {
-        id: 'celesteclassic',
-        title: 'Celeste Classic',
-        publisher: 'Maddy Thorson',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/celesteclassic.png',
-        price: 'FREE',
-        size: '5MB',
-        arch: 'PICO-8 / HTML5',
-        description: 'The original PICO-8 prototype that inspired the massive indie hit Celeste. Master the mid-air dash to climb the mountain.',
-        content: generateGameContent('celesteclassic')
-    },
-    {
-        id: 'vvvvvv',
-        title: 'VVVVVV',
-        publisher: 'Terry Cavanagh',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/vvvvvv.png',
-        price: 'FREE',
-        size: '20MB',
-        arch: 'HTML5 Port',
-        description: 'A brilliantly designed puzzle-platformer where you cannot jump! Instead, you must reverse gravity to navigate spikes and find your lost crew.',
-        content: generateGameContent('vvvvvv')
-    },
-    {
-        id: 'webfishing',
-        title: 'Webfishing',
-        publisher: 'lamedevel',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/webfishing.png',
-        price: 'FREE',
-        size: '98MB',
-        arch: 'Godot HTML5',
-        description: 'A relaxing, cozy multiplayer game. Cast your line, catch dozens of weird fish, and hang out with other cats on the beach.',
-        content: generateGameContent('webfishing')
-    },
-
-    // --- MOBILE GIANTS ---
-    {
-        id: 'fruitninja',
-        title: 'Fruit Ninja',
-        publisher: 'Halfbrick Studios',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/fruitninja.png',
-        price: 'FREE',
-        size: '30MB',
-        arch: 'WebGL',
-        description: 'Unsheathe your sword and slice as much fruit as you can in this classic arcade reflex game. But whatever you do, do not slice the bombs!',
-        content: generateGameContent('fruitninja')
-    },
-    {
-        id: 'jetpackjoyride',
-        title: 'Jetpack Joyride',
-        publisher: 'Halfbrick Studios',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/jetpackjoyride.png',
-        price: 'FREE',
-        size: '45MB',
-        arch: 'WebGL',
-        description: 'Suit up with a selection of coolest jetpacks ever made and take to the skies as Barry Steakfries in this endless runner adventure.',
-        content: generateGameContent('jetpackjoyride')
-    },
-    {
-        id: 'angrybirds',
-        title: 'Angry Birds',
-        publisher: 'Rovio',
-        type: 'Game',
-        image: 'https://raw.githubusercontent.com/gn-math/covers/main/angrybirds.png',
-        price: 'FREE',
-        size: '25MB',
-        arch: 'HTML5',
-        description: 'Use the unique powers of the Angry Birds to destroy the greedy pigs defenses. A physics-based puzzle masterpiece.',
-        content: generateGameContent('angrybirds')
-    }   
+        { id: '10-min-till-dawn', title: '10 Min Till Dawn', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Survive the night in this roguelike shoot-em-up.', content: generateGameContent('10-min-till-dawn', true) },
+        { id: '3d-free-kick', title: '3D Free Kick', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Master your soccer free kicks.', content: generateGameContent('3d-free-kick', true) },
+        { id: '99-balls', title: '99 Balls', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'Addictive ball-shooting puzzle game.', content: generateGameContent('99-balls', true) },
+        
+        { id: 'circlo', title: 'Circlo', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '7MB', arch: 'HTML5', description: 'Physics-based ball platformer.', content: generateGameContent('circlo', true) },
+        { id: 'collor-switch-2', title: 'Color Switch 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Match colors to pass through obstacles.', content: generateGameContent('collor-switch-2', true) },
+        { id: 'connect-3', title: 'Connect 3', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'Match-three puzzle fun.', content: generateGameContent('connect-3', true) },
+        { id: 'cookie-clicker', title: 'Cookie Clicker', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/cookieclicker.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'Bake cookies until you rule the world.', content: generateGameContent('cookie-clicker', true) },
+        { id: 'creative-kill-chamber', title: 'Creative Kill Chamber', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'Flash-Emu', description: 'Stickman stealth and action.', content: generateGameContent('creative-kill-chamber', true) },
+        { id: 'cupcakes-2048', title: 'Cupcakes 2048', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '2MB', arch: 'HTML5', description: '2048 puzzle with tasty cupcakes.', content: generateGameContent('cupcakes-2048', true) },
+        { id: 'cut-the-rope-holiday', title: 'Cut the Rope: Holiday', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Feed Om Nom for the holidays.', content: generateGameContent('cut-the-rope-holiday', true) },
+        { id: 'cut-the-rope', title: 'Cut the Rope', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Classic rope-cutting physics puzzles.', content: generateGameContent('cut-the-rope', true) },
+        { id: 'deal-or-no-deal', title: 'Deal or No Deal', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'The famous game show in your browser.', content: generateGameContent('deal-or-no-deal', true) },
+        { id: 'death-car-io', title: 'Death Car.io', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Destroy other cars to survive.', content: generateGameContent('death-car-io', true) },
+        { id: 'death-run-3d', title: 'Death Run 3D', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'HTML5', description: 'Fast-paced tunnel navigation.', content: generateGameContent('death-run-3d', true) },
+        { id: 'dogeminer', title: 'Dogeminer', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'To the moon! Mine Dogecoin.', content: generateGameContent('dogeminer', true) },
+        { id: 'duke-dashington-remastered', title: 'Duke Dashington', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Fast-paced platforming through ruins.', content: generateGameContent('duke-dashington-remastered', true) },
+        { id: 'endless-war-3', title: 'Endless War 3', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'Flash-Emu', description: 'Top-down tactical warfare.', content: generateGameContent('endless-war-3', true) },
+        { id: 'eurocup-soccer-skills', title: 'Eurocup Soccer', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Lead your team to Euro victory.', content: generateGameContent('eurocup-soccer-skills', true) },
+        { id: 'fireboy-watergirl-forest-temple', title: 'Fireboy & Watergirl', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Classic cooperative puzzle platformer.', content: generateGameContent('fireboy-watergirl-forest-temple', true) },
+        { id: 'geodash-2', title: 'Geo Dash 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Jump through geometric obstacles.', content: generateGameContent('geodash-2', true) },
+        { id: 'geometry-dash', title: 'Geometry Dash', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'The original rhythm-based platformer.', content: generateGameContent('geometry-dash', true) },
+        { id: 'getaway-shootout', title: 'Getaway Shootout', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Race to the vehicle while fighting others.', content: generateGameContent('getaway-shootout', true) },
+        { id: 'gravity-soccer', title: 'Gravity Soccer', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Use gravity to score goals.', content: generateGameContent('gravity-soccer', true) },
+        { id: 'grindcraft', title: 'Grindcraft', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'Minecraft-inspired clicker game.', content: generateGameContent('grindcraft', true) },
+        { id: 'gun-mayhem-2', title: 'Gun Mayhem 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'Flash-Emu', description: 'High-octane arena shooting.', content: generateGameContent('gun-mayhem-2', true) },
+        { id: 'hill-climb-racing', title: 'Hill Climb Racing', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'HTML5', description: 'Physics-based driving through rough terrain.', content: generateGameContent('hill-climb-racing', true) },
+        { id: 'idle-breakout', title: 'Idle Breakout', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'Classic breakout reimagined as an idle game.', content: generateGameContent('idle-breakout', true) },
+        { id: 'iron-snout-2', title: 'Iron Snout 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Wolf-fighting pig action.', content: generateGameContent('iron-snout-2', true) },
+        { id: 'jelly-truck', title: 'Jelly Truck', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'Flash-Emu', description: 'Drive a jelly truck across jelly worlds.', content: generateGameContent('jelly-truck', true) },
+        { id: 'jetpack-joyride', title: 'Jetpack Joyride', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '25MB', arch: 'HTML5', description: 'Escape the lab with your jetpack.', content: generateGameContent('jetpack-joyride', true) },
+        { id: 'kart-fight-io', title: 'Kart Fight.io', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Bump other karts off the platform.', content: generateGameContent('kart-fight-io', true) },
+        { id: 'learn-to-fly', title: 'Learn to Fly', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'Flash-Emu', description: 'Help a penguin learn to fly.', content: generateGameContent('learn-to-fly', true) },
+        { id: 'madalin-cars-multiplayer', title: 'Madalin Multiplayer', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '60MB', arch: 'Unity', description: 'Drift and race with others online.', content: generateGameContent('madalin-cars-multiplayer', true) },
+        { id: 'madalin-stunt-cars-2', title: 'Madalin Stunts 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '55MB', arch: 'Unity', description: 'Supercar stunt simulation.', content: generateGameContent('madalin-stunt-cars-2', true) },
+        { id: 'madalin-stunt-cars-3', title: 'Madalin Stunts 3', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '65MB', arch: 'Unity', description: 'The latest supercar stunt game.', content: generateGameContent('madalin-stunt-cars-3', true) },
+        { id: 'mario', title: 'Super Mario', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'Classic Mario platforming.', content: generateGameContent('mario', true) },
+        { id: 'merge-round-racers', title: 'Merge Round Racers', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Merge cars to unlock faster racers.', content: generateGameContent('merge-round-racers', true) },
+        { id: 'minecraft-classic', title: 'Minecraft Classic', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'HTML5', description: 'Original browser version of Minecraft.', content: generateGameContent('minecraft-classic', true) },
+        { id: 'minesweeper', title: 'Minesweeper', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '1MB', arch: 'HTML5', description: 'Classic mine-finding puzzle.', content: generateGameContent('minesweeper', true) },
+        { id: 'moto-x3m-2', title: 'Moto X3M 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'More stunts and more bike racing.', content: generateGameContent('moto-x3m-2', true) },
+        { id: 'moto-x3m-pool-party', title: 'Moto X3M Pool Party', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Bike stunts at the pool.', content: generateGameContent('moto-x3m-pool-party', true) },
+        { id: 'moto-x3m-spooky-land', title: 'Moto X3M Spooky', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Spooky bike racing action.', content: generateGameContent('moto-x3m-spooky-land', true) },
+        { id: 'moto-x3m-winter', title: 'Moto X3M Winter', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Stunts on the snow.', content: generateGameContent('moto-x3m-winter', true) },
+        { id: 'ovo-3-dimensions', title: 'OvO 3D', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '30MB', arch: 'HTML5', description: 'The momentum platformer in 3D.', content: generateGameContent('ovo-3-dimensions', true) },
+        { id: 'pacman', title: 'Pacman', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '2MB', arch: 'HTML5', description: 'Classic arcade dot-eating.', content: generateGameContent('pacman', true) },
+        { id: 'papas-burgeria', title: 'Papas Burgeria', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'Flash-Emu', description: 'Manage your own burger shop.', content: generateGameContent('papas-burgeria', true) },
+        { id: 'papas-pizzaria', title: 'Papas Pizzaria', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'Flash-Emu', description: 'Cook and serve pizzas.', content: generateGameContent('papas-pizzaria', true) },
+        { id: 'paperio-2', title: 'Paper.io 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Conquer as much territory as possible.', content: generateGameContent('paperio-2', true) },
+        { id: 'pixel-gun-survival', title: 'Pixel Gun Survival', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'Survive against zombies with block guns.', content: generateGameContent('pixel-gun-survival', true) },
+        { id: 'quake', title: 'Quake', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '50MB', arch: 'JS-Emu', description: 'Legendary FPS in your browser.', content: generateGameContent('quake', true) },
+        { id: 'rabbit-samurai-2', title: 'Rabbit Samurai 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Grappling hook platformer.', content: generateGameContent('rabbit-samurai-2', true) },
+        { id: 'riddle-school-5', title: 'Riddle School 5', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'Flash-Emu', description: 'Final chapter of the Riddle School series.', content: generateGameContent('riddle-school-5', true) },
+        { id: 'riddle-transfer-2', title: 'Riddle Transfer 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'Flash-Emu', description: 'Continuation of the point-and-click saga.', content: generateGameContent('riddle-transfer-2', true) },
+        { id: 'rise-of-neon-square', title: 'Neon Square Rise', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Avoid obstacles and rise to the top.', content: generateGameContent('rise-of-neon-square', true) },
+        { id: 'rooftop-snipers-2', title: 'Rooftop Snipers 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Shoot others off rooftops.', content: generateGameContent('rooftop-snipers-2', true) },
+        { id: 'rooftop-snipers', title: 'Rooftop Snipers', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Original rooftop fighting game.', content: generateGameContent('rooftop-snipers', true) },
+        { id: 'run3', title: 'Run 3', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'HTML5', description: 'Infinite runner in space.', content: generateGameContent('run3', true) },
+        { id: 'scrap-metal-3', title: 'Scrap Metal 3', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '55MB', arch: 'Unity', description: 'Extreme car driving and destruction.', content: generateGameContent('scrap-metal-3', true) },
+        { id: 'shell-shockers', title: 'Shell Shockers', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '40MB', arch: 'HTML5', description: 'Egg-based FPS combat.', content: generateGameContent('shell-shockers', true) },
+        { id: 'skyblock', title: 'Skyblock', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Survive on a small floating island.', content: generateGameContent('skyblock', true) },
+        { id: 'slime-rush-td', title: 'Slime Rush TD', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Defend against waves of slimes.', content: generateGameContent('slime-rush-td', true) },
+        { id: 'slope-2', title: 'Slope 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'Unity', description: 'More fast-paced ball rolling.', content: generateGameContent('slope-2', true) },
+        { id: 'slope-ball', title: 'Slope Ball', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Rhythm platformer version of Slope.', content: generateGameContent('slope-ball', true) },
+        { id: 'smash-karts', title: 'Smash Karts', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '30MB', arch: 'HTML5', description: 'Kart-based arena combat.', content: generateGameContent('smash-karts', true) },
+        { id: 'snow-battle-io', title: 'Snow Battle.io', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Knock others out with snowballs.', content: generateGameContent('snow-battle-io', true) },
+        { id: 'snow-rider-3d', title: 'Snow Rider 3D', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '20MB', arch: 'HTML5', description: 'Sled down snowy slopes.', content: generateGameContent('snow-rider-3d', true) },
+        { id: 'soccer-random', title: 'Soccer Random', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'HTML5', description: 'Physics-based soccer fun.', content: generateGameContent('soccer-random', true) },
+        { id: 'solitaire', title: 'Solitaire', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '2MB', arch: 'HTML5', description: 'The classic card game.', content: generateGameContent('solitaire', true) },
+        { id: 'sonic', title: 'Sonic', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'JS-Emu', description: 'Fast hedgehog platforming.', content: generateGameContent('sonic', true) },
+        { id: 'stack-bump-3d', title: 'Stack Bump 3D', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Smash through stacks to win.', content: generateGameContent('stack-bump-3d', true) },
+        { id: 'stealing-the-diamond', title: 'Stealing the Diamond', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'Flash-Emu', description: 'Another Henry Stickmin adventure.', content: generateGameContent('stealing-the-diamond', true) },
+        { id: 'stick-duel-battle', title: 'Stick Duel Battle', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: '1v1 stickman fighting.', content: generateGameContent('stick-duel-battle', true) },
+        { id: 'stickman-boost', title: 'Stickman Boost', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Speed through stickman obstacles.', content: generateGameContent('stickman-boost', true) },
+        { id: 'subway-surfers-bali', title: 'Subway Surfers: Bali', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'Dash through Bali!', content: generateGameContent('subway-surfers-bali', true) },
+        { id: 'subway-surfers-new-york', title: 'Subway Surfers: NY', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'Escape in the subways of NYC.', content: generateGameContent('subway-surfers-new-york', true) },
+        { id: 'subway-surfers-san-francisco', title: 'Subway Surfers: SF', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '35MB', arch: 'HTML5', description: 'Surf the San Francisco hills.', content: generateGameContent('subway-surfers-san-francisco', true) },
+        { id: 'supper-mario-64', title: 'Mario 64', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/mario64.png', price: 'FREE', size: '12MB', arch: 'N64-Emulated', description: 'Classic 3D Mario adventure.', content: generateGameContent('supper-mario-64', true) },
+        { id: 'tank-trouble-2', title: 'Tank Trouble 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Labyrinth tank combat.', content: generateGameContent('tank-trouble-2', true) },
+        { id: 'temple-run-2', title: 'Temple Run 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '25MB', arch: 'HTML5', description: 'Escape the temple once again.', content: generateGameContent('temple-run-2', true) },
+        { id: 'tetris', title: 'Tetris', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '5MB', arch: 'HTML5', description: 'The timeless block-stacking puzzle.', content: generateGameContent('tetris', true) },
+        { id: 'the-bowling-club', title: 'The Bowling Club', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Realistic 3D bowling.', content: generateGameContent('the-bowling-club', true) },
+        { id: 'the-final-earth-2', title: 'The Final Earth 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Build a vertical colony in space.', content: generateGameContent('the-final-earth-2', true) },
+        { id: 'the-final-earth', title: 'The Final Earth', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Manage a colony on a small planetoid.', content: generateGameContent('the-final-earth', true) },
+        { id: 'the-heist', title: 'The Heist', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'Flash-Emu', description: 'Strategic robbery simulation.', content: generateGameContent('the-heist', true) },
+        { id: 'the-impossible-quiz-2', title: 'Impossible Quiz 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'Flash-Emu', description: 'More insanely difficult trivia.', content: generateGameContent('the-impossible-quiz-2', true) },
+        { id: 'the-impossible-quiz', title: 'The Impossible Quiz', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'Flash-Emu', description: 'Try to answer the unanswerable.', content: generateGameContent('the-impossible-quiz', true) },
+        { id: 'time-shooter-3', title: 'Time Shooter 3', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '30MB', arch: 'HTML5', description: 'Time moves only when you move.', content: generateGameContent('time-shooter-3', true) },
+        { id: 'tube-jumpers', title: 'Tube Jumpers', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Stay on your tube at all costs.', content: generateGameContent('tube-jumpers', true) },
+        { id: 'tunnel-rush-2', title: 'Tunnel Rush 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'More tunnel-avoidance challenges.', content: generateGameContent('tunnel-rush-2', true) },
+        { id: 'vex-3', title: 'Vex 3', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '10MB', arch: 'HTML5', description: 'Classic Vex platforming.', content: generateGameContent('vex-3', true) },
+        { id: 'vex-4', title: 'Vex 4', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '12MB', arch: 'HTML5', description: 'Advanced Vex parkour.', content: generateGameContent('vex-4', true) },
+        { id: 'vex-5', title: 'Vex 5', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Tougher Vex levels to master.', content: generateGameContent('vex-5', true) },
+        { id: 'vex-6', title: 'Vex 6', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '18MB', arch: 'HTML5', description: 'More speed and daily tasks.', content: generateGameContent('vex-6', true) },
+        { id: 'wordle', title: 'Wordle', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '2MB', arch: 'HTML5', description: 'Guess the secret five-letter word.', content: generateGameContent('wordle', true) },
+        { id: 'worlds-hardest-game-2', title: 'Hardest Game 2', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'Flash-Emu', description: 'Even more difficult than the first.', content: generateGameContent('worlds-hardest-game-2', true) },
+        { id: 'worlds-hardest-game', title: 'Worlds Hardest Game', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '8MB', arch: 'Flash-Emu', description: 'Avoid the blue dots!', content: generateGameContent('worlds-hardest-game', true) },
+        { id: 'yohohoio', title: 'Yohoho.io', publisher: 'TheOGC', category: 'Game', image: 'https://raw.githubusercontent.com/gn-math/covers/main/default.png', price: 'FREE', size: '15MB', arch: 'HTML5', description: 'Pirate battle royale action.', content: generateGameContent('yohohoio', true) }
     ],
             browser: `
                 <style>
@@ -4316,447 +4306,495 @@ Play responsibly
             `,
 
             music: `
-                <style>
-                    /* ========================================================================== */
-                    /* LUI GI MUSIC - AUTHENTIC WII FRUTIGER AERO EDITION                         */
-                    /* ========================================================================== */
-                    :root {
-                        --wii-cyan: #00c3ff;
-                        --wii-cyan-glow: rgba(0, 195, 255, 0.5);
-                        --wii-blue: #0088ff;
-                        --wii-bg: #e6e6e6;
-                        --wii-panel: #ffffff;
-                        --wii-border: #cccccc;
-                        --wii-text: #555555;
-                        --wii-text-dark: #333333;
-                        --gloss-top: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 50%, transparent 51%);
-                        --gloss-btn: linear-gradient(to bottom, #ffffff 0%, #e0e0e0 100%);
-                    }
+    <style>
+        /* ========================================================================== */
+        /* LUI GI MUSIC - AUTHENTIC WII FRUTIGER AERO EDITION                         */
+        /* ========================================================================== */
+        :root {
+            --wii-cyan: #00c3ff;
+            --wii-cyan-glow: rgba(0, 195, 255, 0.5);
+            --wii-blue: #0088ff;
+            --wii-bg: #e6e6e6;
+            --wii-panel: #ffffff;
+            --wii-border: #cccccc;
+            --wii-text: #555555;
+            --wii-text-dark: #333333;
+            --gloss-top: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 50%, transparent 51%);
+            --gloss-btn: linear-gradient(to bottom, #ffffff 0%, #e0e0e0 100%);
+        }
 
-                    body {
-                        margin: 0; padding: 0; font-family: "Segoe UI", Arial, sans-serif;
-                        background-color: var(--wii-bg);
-                        background-image: radial-gradient(#c8c8c8 1px, transparent 1px);
-                        background-size: 20px 20px;
-                        overflow: hidden; display: flex; height: 100vh; user-select: none;
-                        color: var(--wii-text);
-                    }
+        body {
+            margin: 0; padding: 0; font-family: "Segoe UI", Arial, sans-serif;
+            background-color: var(--wii-bg);
+            background-image: radial-gradient(#c8c8c8 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: hidden; display: flex; height: 100vh; user-select: none;
+            color: var(--wii-text);
+        }
 
-                    /* --- SVG ICON SIZING --- */
-                    .svg-icon { width: 24px; height: 24px; fill: currentColor; }
-                    .svg-icon-sm { width: 18px; height: 18px; fill: currentColor; }
-                    .svg-icon-lg { width: 36px; height: 36px; fill: currentColor; }
+        /* --- SVG ICON SIZING --- */
+        .svg-icon { width: 24px; height: 24px; fill: currentColor; }
+        .svg-icon-sm { width: 18px; height: 18px; fill: currentColor; }
+        .svg-icon-lg { width: 36px; height: 36px; fill: currentColor; }
 
-                    /* --- SIDEBAR LIBRARY --- */
-                    .lm-sidebar {
-                        width: 300px; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px);
-                        border-right: 2px solid var(--wii-border); display: flex; flex-direction: column;
-                        box-shadow: 2px 0 15px rgba(0,0,0,0.05); z-index: 10;
-                    }
-                    
-                    .lm-brand {
-                        padding: 30px; display: flex; align-items: center; gap: 15px;
-                        font-size: 2rem; font-weight: 900; color: var(--wii-blue);
-                        border-bottom: 2px solid #eee;
-                    }
-                    .lm-brand svg { fill: var(--wii-cyan); width: 40px; height: 40px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }
+        /* --- SIDEBAR LIBRARY --- */
+        .lm-sidebar {
+            width: 300px; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px);
+            border-right: 2px solid var(--wii-border); display: flex; flex-direction: column;
+            box-shadow: 2px 0 15px rgba(0,0,0,0.05); z-index: 10;
+        }
+        
+        .lm-brand {
+            padding: 30px; display: flex; align-items: center; gap: 15px;
+            font-size: 2rem; font-weight: 900; color: var(--wii-blue);
+            border-bottom: 2px solid #eee;
+        }
+        .lm-brand svg { fill: var(--wii-cyan); width: 40px; height: 40px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }
 
-                    .lib-section { padding: 20px 0; display: flex; flex-direction: column; gap: 5px; flex: 1; overflow-y: auto; }
-                    .lib-header { font-size: 0.9rem; font-weight: 900; color: #999; text-transform: uppercase; letter-spacing: 2px; padding: 0 30px; margin-bottom: 10px; }
-                    
-                    .lib-btn {
-                        margin: 0 15px; padding: 12px 20px; border-radius: 20px; display: flex; align-items: center; gap: 15px;
-                        font-size: 1.2rem; font-weight: bold; color: var(--wii-text); cursor: pointer; border: 2px solid transparent;
-                        transition: 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                    }
-                    .lib-btn:hover { background: #f5f5f5; border-color: #ddd; transform: translateX(5px); }
-                    .lib-btn.active {
-                        background: var(--gloss-btn); border-color: var(--wii-cyan); color: var(--wii-blue);
-                        box-shadow: 0 4px 10px var(--wii-cyan-glow), inset 0 2px 5px #fff;
-                    }
+        .lib-section { padding: 20px 0; display: flex; flex-direction: column; gap: 5px; flex: 1; overflow-y: auto; }
+        .lib-header { font-size: 0.9rem; font-weight: 900; color: #999; text-transform: uppercase; letter-spacing: 2px; padding: 0 30px; margin-bottom: 10px; }
+        
+        .lib-btn {
+            margin: 0 15px; padding: 12px 20px; border-radius: 20px; display: flex; align-items: center; gap: 15px;
+            font-size: 1.2rem; font-weight: bold; color: var(--wii-text); cursor: pointer; border: 2px solid transparent;
+            transition: 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .lib-btn:hover { background: #f5f5f5; border-color: #ddd; transform: translateX(5px); }
+        .lib-btn.active {
+            background: var(--gloss-btn); border-color: var(--wii-cyan); color: var(--wii-blue);
+            box-shadow: 0 4px 10px var(--wii-cyan-glow), inset 0 2px 5px #fff;
+        }
 
-                    /* --- MAIN VIEW --- */
-                    .lm-main { flex: 1; display: flex; flex-direction: column; position: relative; }
-                    
-                    .main-header {
-                        height: 90px; padding: 0 50px; display: flex; align-items: center; justify-content: space-between;
-                        background: linear-gradient(to bottom, #ffffff, rgba(255,255,255,0)); z-index: 5;
-                    }
-                    .playlist-title { font-size: 3rem; font-weight: 900; color: var(--wii-text-dark); margin: 0; letter-spacing: -1px; }
-                    
-                    .track-container { flex: 1; padding: 0 50px 140px 50px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        /* --- MAIN VIEW --- */
+        .lm-main { flex: 1; display: flex; flex-direction: column; position: relative; }
+        
+        .main-header {
+            height: 90px; padding: 0 50px; display: flex; align-items: center; justify-content: space-between;
+            background: linear-gradient(to bottom, #ffffff, rgba(255,255,255,0)); z-index: 5;
+        }
+        .playlist-title { font-size: 3rem; font-weight: 900; color: var(--wii-text-dark); margin: 0; letter-spacing: -1px; }
+        
+        /* Search Box Styles */
+        .search-container { display: flex; gap: 10px; align-items: center; }
+        .search-input { 
+            padding: 10px 20px; border-radius: 20px; border: 2px solid var(--wii-border);
+            font-size: 1.1rem; outline: none; background: rgba(255,255,255,0.8);
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.05); transition: 0.2s;
+            width: 200px;
+        }
+        .search-input:focus { border-color: var(--wii-cyan); box-shadow: 0 0 10px var(--wii-cyan-glow); }
+        .search-btn {
+            padding: 10px 20px; border-radius: 20px; background: var(--gloss-btn);
+            border: 2px solid #ccc; font-weight: bold; color: var(--wii-text-dark);
+            cursor: pointer; transition: 0.2s;
+        }
+        .search-btn:hover { border-color: var(--wii-cyan); color: var(--wii-blue); }
 
-                    .track-row {
-                        background: var(--wii-panel); border: 2px solid var(--wii-border); border-radius: 40px;
-                        display: flex; align-items: center; padding: 10px 25px; cursor: pointer;
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.05), inset 0 2px 5px #fff; position: relative;
-                        transition: all 0.2s;
-                    }
-                    .track-row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: var(--gloss-top); border-radius: 40px 40px 0 0; pointer-events: none; }
-                    
-                    .track-row:hover { border-color: var(--wii-cyan); transform: scale(1.01) translateY(-2px); box-shadow: 0 8px 15px var(--wii-cyan-glow), inset 0 2px 5px #fff; z-index: 2; }
-                    .track-row.playing { border-color: var(--wii-blue); background: #f0f8ff; box-shadow: 0 5px 15px rgba(0, 136, 255, 0.3), inset 0 2px 5px #fff; }
-                    
-                    .tr-num { width: 40px; font-size: 1.2rem; font-weight: 900; color: #aaa; }
-                    .track-row.playing .tr-num { color: var(--wii-blue); }
-                    .tr-icon { width: 45px; height: 45px; border-radius: 50%; background: #eee; border: 2px solid #ccc; display: flex; justify-content: center; align-items: center; margin-right: 20px; color: #888; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
-                    .track-row.playing .tr-icon { background: var(--wii-cyan); border-color: var(--wii-blue); color: #fff; }
-                    
-                    .tr-info { flex: 1; display: flex; flex-direction: column; z-index: 1; }
-                    .tr-title { font-size: 1.3rem; font-weight: bold; color: var(--wii-text-dark); margin-bottom: 2px; }
-                    .track-row.playing .tr-title { color: var(--wii-blue); }
-                    .tr-artist { font-size: 1rem; color: #888; font-weight: 600; }
-                    
-                    .tr-dur { font-size: 1.2rem; font-weight: bold; color: #888; z-index: 1; }
+        .track-container { flex: 1; padding: 0 50px 140px 50px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
 
-                    /* --- BOTTOM HARDWARE PLAYER BAR --- */
-                    .player-bar {
-                        position: absolute; bottom: 0; left: 0; width: 100%; height: 120px;
-                        background: var(--gloss-btn); border-top: 3px solid #ffffff;
-                        box-shadow: 0 -5px 20px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between;
-                        padding: 0 40px; box-sizing: border-box; z-index: 50;
-                    }
+        .track-row {
+            background: var(--wii-panel); border: 2px solid var(--wii-border); border-radius: 40px;
+            display: flex; align-items: center; padding: 10px 25px; cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05), inset 0 2px 5px #fff; position: relative;
+            transition: all 0.2s;
+        }
+        .track-row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: var(--gloss-top); border-radius: 40px 40px 0 0; pointer-events: none; }
+        
+        .track-row:hover { border-color: var(--wii-cyan); transform: scale(1.01) translateY(-2px); box-shadow: 0 8px 15px var(--wii-cyan-glow), inset 0 2px 5px #fff; z-index: 2; }
+        .track-row.playing { border-color: var(--wii-blue); background: #f0f8ff; box-shadow: 0 5px 15px rgba(0, 136, 255, 0.3), inset 0 2px 5px #fff; }
+        
+        .tr-num { width: 40px; font-size: 1.2rem; font-weight: 900; color: #aaa; }
+        .track-row.playing .tr-num { color: var(--wii-blue); }
+        .tr-icon { width: 45px; height: 45px; border-radius: 50%; background: #eee; border: 2px solid #ccc; display: flex; justify-content: center; align-items: center; margin-right: 20px; color: #888; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+        .track-row.playing .tr-icon { background: var(--wii-cyan); border-color: var(--wii-blue); color: #fff; }
+        
+        .tr-info { flex: 1; display: flex; flex-direction: column; z-index: 1; }
+        .tr-title { font-size: 1.3rem; font-weight: bold; color: var(--wii-text-dark); margin-bottom: 2px; }
+        .track-row.playing .tr-title { color: var(--wii-blue); }
+        .tr-artist { font-size: 1rem; color: #888; font-weight: 600; }
+        
+        .tr-dur { font-size: 1.2rem; font-weight: bold; color: #888; z-index: 1; }
 
-                    /* CD Animation */
-                    .pb-left { display: flex; align-items: center; gap: 25px; width: 30%; }
-                    .cd-case { width: 85px; height: 85px; border-radius: 50%; background: #ddd; border: 3px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.2); position: relative; display: flex; justify-content: center; align-items: center; }
-                    .cd-disc {
-                        width: 100%; height: 100%; border-radius: 50%;
-                        background: conic-gradient(#e6e6e6, #ffffff, #cccccc, #ffffff, #e6e6e6);
-                        border: 2px solid #bbb; display: flex; justify-content: center; align-items: center;
-                        animation: spinCD 3s linear infinite; animation-play-state: paused;
-                    }
-                    .cd-disc.playing { animation-play-state: running; }
-                    .cd-disc::after { content: ''; width: 25px; height: 25px; border-radius: 50%; background: #fff; border: 2px solid #ccc; box-shadow: inset 0 2px 5px rgba(0,0,0,0.3); }
-                    @keyframes spinCD { 100% { transform: rotate(360deg); } }
-                    
-                    .pb-info { display: flex; flex-direction: column; }
-                    .pb-title { font-size: 1.5rem; font-weight: 900; color: var(--wii-text-dark); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
-                    .pb-artist { font-size: 1.1rem; color: #888; font-weight: bold; }
+        /* --- BOTTOM HARDWARE PLAYER BAR --- */
+        .player-bar {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 120px;
+            background: var(--gloss-btn); border-top: 3px solid #ffffff;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between;
+            padding: 0 40px; box-sizing: border-box; z-index: 50;
+        }
 
-                    /* Controls */
-                    .pb-center { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 15px; }
-                    .controls-row { display: flex; align-items: center; gap: 30px; }
-                    
-                    .ctrl-btn {
-                        width: 45px; height: 45px; border-radius: 50%; background: transparent; border: 2px solid transparent;
-                        display: flex; justify-content: center; align-items: center; color: #888; cursor: pointer; transition: 0.2s;
-                    }
-                    .ctrl-btn:hover { background: #fff; border-color: #ccc; color: var(--wii-blue); box-shadow: 0 3px 6px rgba(0,0,0,0.1); transform: scale(1.1); }
-                    
-                    .ctrl-play {
-                        width: 65px; height: 65px; border-radius: 50%; background: var(--gloss-btn);
-                        border: 3px solid #fff; display: flex; justify-content: center; align-items: center;
-                        color: var(--wii-text-dark); cursor: pointer; box-shadow: 0 5px 10px rgba(0,0,0,0.15), inset 0 2px 5px #fff;
-                        transition: 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                    }
-                    .ctrl-play:hover { border-color: var(--wii-cyan); color: var(--wii-blue); box-shadow: 0 8px 15px var(--wii-cyan-glow), inset 0 2px 5px #fff; transform: scale(1.08); }
+        /* CD Animation */
+        .pb-left { display: flex; align-items: center; gap: 25px; width: 30%; }
+        .cd-case { width: 85px; height: 85px; border-radius: 50%; background: #ddd; border: 3px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.2); position: relative; display: flex; justify-content: center; align-items: center; }
+        .cd-disc {
+            width: 100%; height: 100%; border-radius: 50%;
+            background: conic-gradient(#e6e6e6, #ffffff, #cccccc, #ffffff, #e6e6e6);
+            border: 2px solid #bbb; display: flex; justify-content: center; align-items: center;
+            animation: spinCD 3s linear infinite; animation-play-state: paused;
+        }
+        .cd-disc.playing { animation-play-state: running; }
+        .cd-disc::after { content: ''; width: 25px; height: 25px; border-radius: 50%; background: #fff; border: 2px solid #ccc; box-shadow: inset 0 2px 5px rgba(0,0,0,0.3); }
+        @keyframes spinCD { 100% { transform: rotate(360deg); } }
+        
+        .pb-info { display: flex; flex-direction: column; }
+        .pb-title { font-size: 1.5rem; font-weight: 900; color: var(--wii-text-dark); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+        .pb-artist { font-size: 1.1rem; color: #888; font-weight: bold; }
 
-                    /* Scrubber */
-                    .scrubber-row { display: flex; align-items: center; gap: 15px; width: 100%; max-width: 600px; }
-                    .time-lbl { font-size: 1rem; font-weight: bold; color: #888; font-family: monospace; width: 45px; text-align: center; }
-                    .scrub-bg { flex: 1; height: 12px; background: #ddd; border-radius: 6px; border: 1px solid #ccc; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; position: relative; }
-                    .scrub-fill { position: absolute; top: 0; left: 0; height: 100%; width: 0%; background: var(--wii-cyan); border-radius: 6px; box-shadow: 0 0 10px var(--wii-cyan-glow); pointer-events: none; }
+        /* Controls */
+        .pb-center { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        .controls-row { display: flex; align-items: center; gap: 30px; }
+        
+        .ctrl-btn {
+            width: 45px; height: 45px; border-radius: 50%; background: transparent; border: 2px solid transparent;
+            display: flex; justify-content: center; align-items: center; color: #888; cursor: pointer; transition: 0.2s;
+        }
+        .ctrl-btn:hover { background: #fff; border-color: #ccc; color: var(--wii-blue); box-shadow: 0 3px 6px rgba(0,0,0,0.1); transform: scale(1.1); }
+        
+        .ctrl-play {
+            width: 65px; height: 65px; border-radius: 50%; background: var(--gloss-btn);
+            border: 3px solid #fff; display: flex; justify-content: center; align-items: center;
+            color: var(--wii-text-dark); cursor: pointer; box-shadow: 0 5px 10px rgba(0,0,0,0.15), inset 0 2px 5px #fff;
+            transition: 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .ctrl-play:hover { border-color: var(--wii-cyan); color: var(--wii-blue); box-shadow: 0 8px 15px var(--wii-cyan-glow), inset 0 2px 5px #fff; transform: scale(1.08); }
 
-                    /* Volume */
-                    .pb-right { width: 30%; display: flex; justify-content: flex-end; align-items: center; gap: 15px; }
-                    .vol-bg { width: 130px; height: 12px; background: #ddd; border-radius: 6px; border: 1px solid #ccc; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; position: relative; }
-                    .vol-fill { position: absolute; top: 0; left: 0; height: 100%; width: 80%; background: #888; border-radius: 6px; pointer-events: none; }
+        /* Scrubber */
+        .scrubber-row { display: flex; align-items: center; gap: 15px; width: 100%; max-width: 600px; }
+        .time-lbl { font-size: 1rem; font-weight: bold; color: #888; font-family: monospace; width: 45px; text-align: center; }
+        .scrub-bg { flex: 1; height: 12px; background: #ddd; border-radius: 6px; border: 1px solid #ccc; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; position: relative; }
+        .scrub-fill { position: absolute; top: 0; left: 0; height: 100%; width: 0%; background: var(--wii-cyan); border-radius: 6px; box-shadow: 0 0 10px var(--wii-cyan-glow); pointer-events: none; }
 
-                </style>
+        /* Volume */
+        .pb-right { width: 30%; display: flex; justify-content: flex-end; align-items: center; gap: 15px; }
+        .vol-bg { width: 130px; height: 12px; background: #ddd; border-radius: 6px; border: 1px solid #ccc; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; position: relative; }
+        .vol-fill { position: absolute; top: 0; left: 0; height: 100%; width: 80%; background: #888; border-radius: 6px; pointer-events: none; }
 
-                <svg style="display:none;" xmlns="http://www.w3.org/2000/svg">
-                    <defs>
-                        <g id="ic-music"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></g>
-                        <g id="ic-sd"><path d="M18 2h-8L4 8v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-6 6h-2V4h2v4zm3 0h-2V4h2v4zm3 0h-2V4h2v4z"/></g>
-                        <g id="ic-star"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></g>
-                        <g id="ic-play"><path d="M8 5v14l11-7z"/></g>
-                        <g id="ic-pause"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></g>
-                        <g id="ic-prev"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></g>
-                        <g id="ic-next"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></g>
-                        <g id="ic-vol"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></g>
-                        <g id="ic-disc"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/><circle cx="12" cy="12" r="2"/></g>
-                    </defs>
-                </svg>
+    </style>
 
-                <div class="lm-sidebar">
-                    <div class="lm-brand">
-                        <svg viewBox="0 0 24 24"><use href="#ic-music"></use></svg>
-                        LuiGi Music
-                    </div>
-                    
-                    <div class="lib-section">
-                        <div class="lib-header">Data Management</div>
-                        <div class="lib-btn active" id="btn-lib-sys" onclick="LuiGiApp.switchLibrary('sys')">
-                            <svg class="svg-icon"><use href="#ic-disc"></use></svg> System Memory
-                        </div>
-                        <div class="lib-btn" id="btn-lib-sd" onclick="LuiGiApp.switchLibrary('sd')">
-                            <svg class="svg-icon"><use href="#ic-sd"></use></svg> SD Card
-                        </div>
-                        
-                        <div class="lib-header" style="margin-top: 20px;">Playlists</div>
-                        <div class="lib-btn" id="btn-lib-fav" onclick="LuiGiApp.switchLibrary('fav')">
-                            <svg class="svg-icon"><use href="#ic-star"></use></svg> Favorites
-                        </div>
-                    </div>
+    <svg style="display:none;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <g id="ic-music"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></g>
+            <g id="ic-sd"><path d="M18 2h-8L4 8v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-6 6h-2V4h2v4zm3 0h-2V4h2v4zm3 0h-2V4h2v4z"/></g>
+            <g id="ic-search"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></g>
+            <g id="ic-play"><path d="M8 5v14l11-7z"/></g>
+            <g id="ic-pause"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></g>
+            <g id="ic-prev"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></g>
+            <g id="ic-next"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></g>
+            <g id="ic-vol"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></g>
+            <g id="ic-disc"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/><circle cx="12" cy="12" r="2"/></g>
+        </defs>
+    </svg>
+
+    <div class="lm-sidebar">
+        <div class="lm-brand">
+            <svg viewBox="0 0 24 24"><use href="#ic-music"></use></svg>
+            LuiGi Music
+        </div>
+        
+        <div class="lib-section">
+            <div class="lib-header">Data Management</div>
+            <div class="lib-btn active" id="btn-lib-sys" onclick="LuiGiApp.switchLibrary('sys')">
+                <svg class="svg-icon"><use href="#ic-disc"></use></svg> System Memory
+            </div>
+            <div class="lib-btn" id="btn-lib-sd" onclick="LuiGiApp.switchLibrary('sd')">
+                <svg class="svg-icon"><use href="#ic-sd"></use></svg> SD Card
+            </div>
+            
+            <div class="lib-header" style="margin-top: 20px;">Internet</div>
+            <div class="lib-btn" id="btn-lib-search" onclick="LuiGiApp.switchLibrary('search')">
+                <svg class="svg-icon"><use href="#ic-search"></use></svg> Search Online
+            </div>
+        </div>
+    </div>
+
+    <div class="lm-main">
+        <div class="main-header">
+            <h1 class="playlist-title" id="view-title">System Memory</h1>
+            <div class="search-container" id="search-box" style="display:none;">
+                <input type="text" id="search-input" class="search-input" placeholder="Artist or Song..." onkeypress="if(event.key === 'Enter') LuiGiApp.doSearch()">
+                <button class="search-btn" onclick="LuiGiApp.doSearch()">Search</button>
+            </div>
+        </div>
+
+        <div class="track-container" id="track-list">
+            </div>
+
+        <div class="player-bar">
+            <div class="pb-left">
+                <div class="cd-case"><div class="cd-disc" id="cd-spin"></div></div>
+                <div class="pb-info">
+                    <div class="pb-title" id="now-title">Ready</div>
+                    <div class="pb-artist" id="now-artist">Select a track</div>
                 </div>
+            </div>
 
-                <div class="lm-main">
-                    <div class="main-header">
-                        <h1 class="playlist-title" id="view-title">System Memory</h1>
+            <div class="pb-center">
+                <div class="controls-row">
+                    <div class="ctrl-btn" onclick="LuiGiApp.prev()"><svg class="svg-icon-lg"><use href="#ic-prev"></use></svg></div>
+                    <div class="ctrl-play" onclick="LuiGiApp.togglePlay()">
+                        <svg class="svg-icon-lg" id="play-icon"><use href="#ic-play"></use></svg>
                     </div>
-
-                    <div class="track-container" id="track-list">
-                        </div>
-
-                    <div class="player-bar">
-                        <div class="pb-left">
-                            <div class="cd-case"><div class="cd-disc" id="cd-spin"></div></div>
-                            <div class="pb-info">
-                                <div class="pb-title" id="now-title">Ready</div>
-                                <div class="pb-artist" id="now-artist">Select a track</div>
-                            </div>
-                        </div>
-
-                        <div class="pb-center">
-                            <div class="controls-row">
-                                <div class="ctrl-btn" onclick="LuiGiApp.prev()"><svg class="svg-icon-lg"><use href="#ic-prev"></use></svg></div>
-                                <div class="ctrl-play" onclick="LuiGiApp.togglePlay()">
-                                    <svg class="svg-icon-lg" id="play-icon"><use href="#ic-play"></use></svg>
-                                </div>
-                                <div class="ctrl-btn" onclick="LuiGiApp.next()"><svg class="svg-icon-lg"><use href="#ic-next"></use></svg></div>
-                            </div>
-                            <div class="scrubber-row">
-                                <div class="time-lbl" id="time-cur">0:00</div>
-                                <div class="scrub-bg" id="scrub-bg" onclick="LuiGiApp.seek(event)">
-                                    <div class="scrub-fill" id="scrub-fill"></div>
-                                </div>
-                                <div class="time-lbl" id="time-max">0:00</div>
-                            </div>
-                        </div>
-
-                        <div class="pb-right">
-                            <svg class="svg-icon" style="color:#888;"><use href="#ic-vol"></use></svg>
-                            <div class="vol-bg" id="vol-bg" onclick="LuiGiApp.setVolume(event)">
-                                <div class="vol-fill" id="vol-fill"></div>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="ctrl-btn" onclick="LuiGiApp.next()"><svg class="svg-icon-lg"><use href="#ic-next"></use></svg></div>
                 </div>
+                <div class="scrubber-row">
+                    <div class="time-lbl" id="time-cur">0:00</div>
+                    <div class="scrub-bg" id="scrub-bg" onclick="LuiGiApp.seek(event)">
+                        <div class="scrub-fill" id="scrub-fill"></div>
+                    </div>
+                    <div class="time-lbl" id="time-max">0:00</div>
+                </div>
+            </div>
 
-                <script>
-                    var api = window.parent.WiiAPI;
+            <div class="pb-right">
+                <svg class="svg-icon" style="color:#888;"><use href="#ic-vol"></use></svg>
+                <div class="vol-bg" id="vol-bg" onclick="LuiGiApp.setVolume(event)">
+                    <div class="vol-fill" id="vol-fill"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                    // ==========================================================================
-                    // REAL AUDIO ENGINE & LIBRARY SYSTEM
-                    // Strict string concatenation. No template literals.
-                    // ==========================================================================
+    <script>
+        var api = window.parent.WiiAPI;
+
+        // ==========================================================================
+        // REAL ITUNES API AUDIO ENGINE
+        // ==========================================================================
+        
+        var MusicData = {
+            'sys': { title: 'System Memory (Wii Hits)', tracks: [] },
+            'sd': { title: 'SD Card (Top 40)', tracks: [] },
+            'search': { title: 'Search Results', tracks: [] }
+        };
+
+        var LuiGiApp = {
+            audio: new Audio(),
+            currentLib: 'sys',
+            currentTrackId: null,
+            isPlaying: false,
+
+            init: function() {
+                var self = this;
+                this.audio.volume = 0.8;
+
+                this.audio.addEventListener('timeupdate', function() { self.updateTime(); });
+                this.audio.addEventListener('loadedmetadata', function() {
+                    document.getElementById('time-max').innerText = self.formatTime(self.audio.duration);
+                });
+                this.audio.addEventListener('ended', function() { self.next(); });
+                this.audio.addEventListener('error', function() { 
+                    alert('Error streaming track. iTunes may block some files.');
+                    self.next();
+                });
+
+                this.switchLibrary('sys');
+            },
+
+            fetchRealMusic: async function(searchTerm, libKey) {
+                var self = this;
+                document.getElementById('track-list').innerHTML = '<div style="text-align:center; margin-top:50px; color:#888; font-size:1.5rem; font-weight:bold;">Loading Data...</div>';
+                
+                try {
+                    const response = await fetch("https://itunes.apple.com/search?term=" + encodeURIComponent(searchTerm) + "&entity=song&limit=25");
+                    const data = await response.json();
                     
-                    var MusicData = {
-                        'sys': {
-                            title: 'System Memory',
-                            tracks: [
-                                { id: 's0', title: 'Aero Breeze', artist: 'SoundHelix (Test 1)', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-                                { id: 's1', title: 'Ocean Groove', artist: 'SoundHelix (Test 2)', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
-                                { id: 's2', title: 'Digital Sunset', artist: 'SoundHelix (Test 3)', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' }
-                            ]
-                        },
-                        'sd': {
-                            title: 'SD Card Data',
-                            tracks: [
-                                { id: 'd0', title: 'Midnight Drive', artist: 'SoundHelix (Test 8)', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3' },
-                                { id: 'd1', title: 'Star Festival', artist: 'SoundHelix (Test 9)', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3' }
-                            ]
-                        },
-                        'fav': {
-                            title: 'Favorites',
-                            tracks: [
-                                { id: 'f0', title: 'Aero Breeze', artist: 'SoundHelix (Test 1)', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-                                { id: 'f1', title: 'Star Festival', artist: 'SoundHelix (Test 9)', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3' }
-                            ]
-                        }
-                    };
+                    // Filter out results that don't have a preview audio URL
+                    const validTracks = data.results.filter(song => song.previewUrl);
 
-                    var LuiGiApp = {
-                        audio: new Audio(),
-                        currentLib: 'sys',
-                        currentTrackId: null,
-                        isPlaying: false,
+                    MusicData[libKey].tracks = validTracks.map((song, index) => ({
+                        id: libKey + index,
+                        title: song.trackName,
+                        artist: song.artistName,
+                        src: song.previewUrl
+                    }));
+                    
+                    self.renderList();
+                } catch (error) {
+                    console.error(error);
+                    document.getElementById('track-list').innerHTML = '<div style="text-align:center; color:red; margin-top:50px; font-weight:bold;">Network Error fetching API</div>';
+                }
+            },
 
-                        init: function() {
-                            var self = this;
-                            this.audio.volume = 0.8;
+            doSearch: function() {
+                var term = document.getElementById('search-input').value;
+                if(!term) return;
+                MusicData['search'].title = "Results: " + term;
+                document.getElementById('view-title').innerText = MusicData['search'].title;
+                this.fetchRealMusic(term, 'search');
+            },
 
-                            // Audio Event Bindings
-                            this.audio.addEventListener('timeupdate', function() { self.updateTime(); });
-                            this.audio.addEventListener('loadedmetadata', function() {
-                                document.getElementById('time-max').innerText = self.formatTime(self.audio.duration);
-                            });
-                            this.audio.addEventListener('ended', function() { self.next(); });
-                            this.audio.addEventListener('error', function() { 
-                                alert('Error loading audio track from server.');
-                                self.next();
-                            });
+            switchLibrary: function(libKey) {
+                if(!MusicData[libKey]) return;
+                this.currentLib = libKey;
+                
+                document.getElementById('btn-lib-sys').className = 'lib-btn';
+                document.getElementById('btn-lib-sd').className = 'lib-btn';
+                document.getElementById('btn-lib-search').className = 'lib-btn';
+                document.getElementById('btn-lib-' + libKey).className = 'lib-btn active';
+                
+                document.getElementById('view-title').innerText = MusicData[libKey].title;
+                var searchBox = document.getElementById('search-box');
+                
+                if (libKey === 'sys') {
+                    searchBox.style.display = 'none';
+                    if(MusicData['sys'].tracks.length === 0) this.fetchRealMusic("Nintendo Wii", libKey);
+                    else this.renderList();
+                } else if (libKey === 'sd') {
+                    searchBox.style.display = 'none';
+                    if(MusicData['sd'].tracks.length === 0) this.fetchRealMusic("Daft Punk", libKey);
+                    else this.renderList();
+                } else if (libKey === 'search') {
+                    searchBox.style.display = 'flex';
+                    if(MusicData['search'].tracks.length === 0) {
+                        document.getElementById('track-list').innerHTML = '<div style="text-align:center; color:#999; font-size:1.5rem; margin-top:50px;">Type an artist or song above and press Search.</div>';
+                    } else {
+                        this.renderList();
+                    }
+                }
+            },
 
-                            this.switchLibrary('sys');
-                        },
+            renderList: function() {
+                var list = document.getElementById('track-list');
+                list.innerHTML = '';
+                
+                var tracks = MusicData[this.currentLib].tracks;
+                if(tracks.length === 0) {
+                    list.innerHTML = '<div style="text-align:center; color:#999; font-size:1.5rem; margin-top:50px;">No tracks found.</div>';
+                    return;
+                }
 
-                        switchLibrary: function(libKey) {
-                            if(!MusicData[libKey]) return;
-                            this.currentLib = libKey;
-                            
-                            // UI Updates
-                            document.getElementById('btn-lib-sys').className = 'lib-btn';
-                            document.getElementById('btn-lib-sd').className = 'lib-btn';
-                            document.getElementById('btn-lib-fav').className = 'lib-btn';
-                            document.getElementById('btn-lib-' + libKey).className = 'lib-btn active';
-                            
-                            document.getElementById('view-title').innerText = MusicData[libKey].title;
-                            
-                            this.renderList();
-                        },
+                for(var i=0; i<tracks.length; i++) {
+                    var t = tracks[i];
+                    var actCls = (t.id === this.currentTrackId) ? ' playing' : '';
+                    
+                    var html = '<div class="track-row' + actCls + '" onclick="LuiGiApp.loadTrack(\\'' + t.id + '\\')">' +
+                               '<div class="tr-num">' + (i + 1) + '</div>' +
+                               '<div class="tr-icon"><svg class="svg-icon-sm"><use href="#ic-music"></use></svg></div>' +
+                               '<div class="tr-info">' +
+                               '<div class="tr-title">' + t.title + '</div>' +
+                               '<div class="tr-artist">' + t.artist + '</div>' +
+                               '</div>' +
+                               '<div class="tr-dur">PREVIEW</div>' +
+                               '</div>';
+                    list.innerHTML += html;
+                }
+            },
 
-                        renderList: function() {
-                            var list = document.getElementById('track-list');
-                            list.innerHTML = '';
-                            
-                            var tracks = MusicData[this.currentLib].tracks;
-                            if(tracks.length === 0) {
-                                list.innerHTML = '<div style="text-align:center; color:#999; font-size:1.5rem; margin-top:50px;">No data found.</div>';
-                                return;
-                            }
+            getTrackObj: function(id) {
+                var tracks = MusicData[this.currentLib].tracks;
+                for(var i=0; i<tracks.length; i++) {
+                    if(tracks[i].id === id) return { track: tracks[i], index: i };
+                }
+                return null;
+            },
 
-                            for(var i=0; i<tracks.length; i++) {
-                                var t = tracks[i];
-                                var actCls = (t.id === this.currentTrackId) ? ' playing' : '';
-                                
-                                var html = '<div class="track-row' + actCls + '" onclick="LuiGiApp.loadTrack(\\'' + t.id + '\\')">' +
-                                           '<div class="tr-num">' + (i + 1) + '</div>' +
-                                           '<div class="tr-icon"><svg class="svg-icon-sm"><use href="#ic-music"></use></svg></div>' +
-                                           '<div class="tr-info">' +
-                                           '<div class="tr-title">' + t.title + '</div>' +
-                                           '<div class="tr-artist">' + t.artist + '</div>' +
-                                           '</div>' +
-                                           '<div class="tr-dur">HQ</div>' +
-                                           '</div>';
-                                list.innerHTML += html;
-                            }
-                        },
+            loadTrack: function(id) {
+                var data = this.getTrackObj(id);
+                if(!data) return;
+                
+                if(api) api.sysLog("Streaming audio: " + data.track.title);
 
-                        getTrackObj: function(id) {
-                            var tracks = MusicData[this.currentLib].tracks;
-                            for(var i=0; i<tracks.length; i++) {
-                                if(tracks[i].id === id) return { track: tracks[i], index: i };
-                            }
-                            return null;
-                        },
+                this.currentTrackId = id;
+                this.audio.src = data.track.src;
+                
+                document.getElementById('now-title').innerText = data.track.title;
+                document.getElementById('now-artist').innerText = data.track.artist;
+                document.getElementById('scrub-fill').style.width = '0%';
+                
+                this.renderList();
+                
+                this.isPlaying = false;
+                this.togglePlay();
+            },
 
-                        loadTrack: function(id) {
-                            var data = this.getTrackObj(id);
-                            if(!data) return;
-                            
-                            if(api) api.sysLog("Loading audio track: " + data.track.title);
+            togglePlay: function() {
+                if(!this.currentTrackId) {
+                    var tracks = MusicData[this.currentLib].tracks;
+                    if(tracks.length > 0) this.loadTrack(tracks[0].id);
+                    return;
+                }
+                
+                var icon = document.getElementById('play-icon');
+                var cd = document.getElementById('cd-spin');
+                
+                if(this.isPlaying) {
+                    this.audio.pause();
+                    this.isPlaying = false;
+                    icon.innerHTML = '<use href="#ic-play"></use>';
+                    cd.classList.remove('playing');
+                } else {
+                    this.audio.play().catch(e => console.log("Playback prevented:", e));
+                    this.isPlaying = true;
+                    icon.innerHTML = '<use href="#ic-pause"></use>';
+                    cd.classList.add('playing');
+                }
+            },
 
-                            this.currentTrackId = id;
-                            this.audio.src = data.track.src;
-                            
-                            // Update Player UI
-                            document.getElementById('now-title').innerText = data.track.title;
-                            document.getElementById('now-artist').innerText = data.track.artist;
-                            document.getElementById('scrub-fill').style.width = '0%';
-                            
-                            this.renderList();
-                            
-                            this.isPlaying = false;
-                            this.togglePlay();
-                        },
+            next: function() {
+                if(!this.currentTrackId) return;
+                var data = this.getTrackObj(this.currentTrackId);
+                var tracks = MusicData[this.currentLib].tracks;
+                if(tracks.length === 0) return;
+                var nextIdx = data.index + 1;
+                if(nextIdx >= tracks.length) nextIdx = 0;
+                this.loadTrack(tracks[nextIdx].id);
+            },
 
-                        togglePlay: function() {
-                            if(!this.currentTrackId) {
-                                var tracks = MusicData[this.currentLib].tracks;
-                                if(tracks.length > 0) this.loadTrack(tracks[0].id);
-                                return;
-                            }
-                            
-                            var icon = document.getElementById('play-icon');
-                            var cd = document.getElementById('cd-spin');
-                            
-                            if(this.isPlaying) {
-                                this.audio.pause();
-                                this.isPlaying = false;
-                                icon.innerHTML = '<use href="#ic-play"></use>';
-                                cd.classList.remove('playing');
-                            } else {
-                                this.audio.play();
-                                this.isPlaying = true;
-                                icon.innerHTML = '<use href="#ic-pause"></use>';
-                                cd.classList.add('playing');
-                            }
-                        },
+            prev: function() {
+                if(!this.currentTrackId) return;
+                if(this.audio.currentTime > 3) {
+                    this.audio.currentTime = 0;
+                    return;
+                }
+                var data = this.getTrackObj(this.currentTrackId);
+                var tracks = MusicData[this.currentLib].tracks;
+                if(tracks.length === 0) return;
+                var prevIdx = data.index - 1;
+                if(prevIdx < 0) prevIdx = tracks.length - 1;
+                this.loadTrack(tracks[prevIdx].id);
+            },
 
-                        next: function() {
-                            if(!this.currentTrackId) return;
-                            var data = this.getTrackObj(this.currentTrackId);
-                            var tracks = MusicData[this.currentLib].tracks;
-                            var nextIdx = data.index + 1;
-                            if(nextIdx >= tracks.length) nextIdx = 0;
-                            this.loadTrack(tracks[nextIdx].id);
-                        },
+            seek: function(e) {
+                if(!this.currentTrackId || isNaN(this.audio.duration)) return;
+                var bg = document.getElementById('scrub-bg');
+                var rect = bg.getBoundingClientRect();
+                var pct = (e.clientX - rect.left) / rect.width;
+                pct = Math.max(0, Math.min(1, pct));
+                this.audio.currentTime = pct * this.audio.duration;
+            },
 
-                        prev: function() {
-                            if(!this.currentTrackId) return;
-                            if(this.audio.currentTime > 3) {
-                                this.audio.currentTime = 0;
-                                return;
-                            }
-                            var data = this.getTrackObj(this.currentTrackId);
-                            var tracks = MusicData[this.currentLib].tracks;
-                            var prevIdx = data.index - 1;
-                            if(prevIdx < 0) prevIdx = tracks.length - 1;
-                            this.loadTrack(tracks[prevIdx].id);
-                        },
+            setVolume: function(e) {
+                var bg = document.getElementById('vol-bg');
+                var rect = bg.getBoundingClientRect();
+                var pct = (e.clientX - rect.left) / rect.width;
+                pct = Math.max(0, Math.min(1, pct));
+                this.audio.volume = pct;
+                document.getElementById('vol-fill').style.width = (pct * 100) + '%';
+            },
 
-                        seek: function(e) {
-                            if(!this.currentTrackId || isNaN(this.audio.duration)) return;
-                            var bg = document.getElementById('scrub-bg');
-                            var rect = bg.getBoundingClientRect();
-                            var pct = (e.clientX - rect.left) / rect.width;
-                            pct = Math.max(0, Math.min(1, pct));
-                            this.audio.currentTime = pct * this.audio.duration;
-                        },
+            updateTime: function() {
+                var cur = this.audio.currentTime;
+                var dur = this.audio.duration;
+                if(isNaN(dur)) return;
+                
+                var pct = (cur / dur) * 100;
+                document.getElementById('scrub-fill').style.width = pct + '%';
+                document.getElementById('time-cur').innerText = this.formatTime(cur);
+            },
 
-                        setVolume: function(e) {
-                            var bg = document.getElementById('vol-bg');
-                            var rect = bg.getBoundingClientRect();
-                            var pct = (e.clientX - rect.left) / rect.width;
-                            pct = Math.max(0, Math.min(1, pct));
-                            this.audio.volume = pct;
-                            document.getElementById('vol-fill').style.width = (pct * 100) + '%';
-                        },
+            formatTime: function(secs) {
+                if(isNaN(secs)) return "0:00";
+                var m = Math.floor(secs / 60);
+                var s = Math.floor(secs % 60);
+                if(s < 10) s = '0' + s;
+                return m + ':' + s;
+            }
+        };
 
-                        updateTime: function() {
-                            var cur = this.audio.currentTime;
-                            var dur = this.audio.duration;
-                            if(isNaN(dur)) return;
-                            
-                            var pct = (cur / dur) * 100;
-                            document.getElementById('scrub-fill').style.width = pct + '%';
-                            document.getElementById('time-cur').innerText = this.formatTime(cur);
-                        },
+        LuiGiApp.init();
 
-                        formatTime: function(secs) {
-                            if(isNaN(secs)) return "0:00";
-                            var m = Math.floor(secs / 60);
-                            var s = Math.floor(secs % 60);
-                            if(s < 10) s = '0' + s;
-                            return m + ':' + s;
-                        }
-                    };
-
-                    LuiGiApp.init();
-
-                <\/script>
-            `,
+    <\/script>
+`,
         };
 
         const VirtualNAND = {
