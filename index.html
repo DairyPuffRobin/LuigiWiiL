@@ -881,44 +881,54 @@ Play responsibly
 
     return `
         <div style="position:relative; width:100%; height:100%; background:#000;">
-            <iframe id="${frameId}" style="width:100%; height:100%; border:none; opacity:0;" allow="autoplay; fullscreen; pointer-lock"></iframe>
-            <div class="os-loader" style="position:absolute; top:0; left:0; width:100%; height:100%; background:#000; color:#0f0; display:flex; align-items:center; justify-content:center; font-family:monospace;">
-                <span class="status-text">DECODING OGC WRAPPER...</span>
+            <iframe id="${frameId}" 
+                style="width:100%; height:100%; border:none; opacity:0; background:#000;" 
+                allow="autoplay;攻击; fullscreen; pointer-lock; microphone; camera; midi; clipboard-read; clipboard-write;"
+                sandbox="allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-same-origin allow-scripts"
+            ></iframe>
+            <div class="os-loader" style="position:absolute; top:0; left:0; width:100%; height:100%; background:#000; color:#b388ff; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:monospace;">
+                <div class="spinner" style="width:40px; height:40px; border:3px solid #333; border-top:3px solid #b388ff; border-radius:50%; margin-bottom:15px; animation: spin 1s linear infinite;"></div>
+                <span class="status-text" style="letter-spacing: 2px;">INITIALIZING...</span>
             </div>
+            <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
             <img src="x" style="display:none;" onerror="
                 (async () => {
                     const frame = document.getElementById('${frameId}');
                     const status = frame.parentElement.querySelector('.status-text');
                     
                     try {
-                        // Proxy the request to bypass the browser's strict CORS policy
                         const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('${url}');
                         const response = await fetch(proxyUrl);
                         
-                        if (!response.ok) throw new Error('Proxy failed to fetch the raw HTML');
+                        if (!response.ok) throw new Error('Proxy failed');
                         
                         const text = await response.text();
                         
-                        // REGEX: Find the 'src' attribute inside the iframe tag in the OGC wrapper
-                        const match = text.match(/<iframe.*?src=['&quot;](.*?)['&quot;]/i);
+                        // Improved Regex to catch different quote styles or spaces
+                        const match = text.match(/<iframe.*?src=[&quot;'](.*?)?[&quot;']/i);
                         
                         if (match && match[1]) {
-                            // If we found a nested URL, load THAT directly
+                            status.innerText = 'BYPASSING CORS...';
+                            // Forces the frame to reload properly with the new source
                             frame.src = match[1];
-                            status.innerText = 'REDIRECTING TO SOURCE...';
                         } else {
-                            // If it's a normal HTML game file, inject the raw code into the frame
+                            status.innerText = 'INJECTING RAW DATA...';
                             const doc = frame.contentWindow.document;
-                            doc.open(); doc.write(text); doc.close();
+                            doc.open(); 
+                            doc.write(text); 
+                            doc.close();
                         }
                         
                         frame.onload = () => {
-                            frame.style.opacity = '1';
-                            frame.parentElement.querySelector('.os-loader').style.display = 'none';
+                            setTimeout(() => {
+                                frame.style.opacity = '1';
+                                frame.parentElement.querySelector('.os-loader').style.display = 'none';
+                            }, 500); // Small delay to prevent a white flash
                         };
                     } catch (e) {
                         console.error('Fetch Error:', e);
-                        status.innerText = 'CONNECTION REFUSED BY HOST OR PROXY';
+                        status.innerText = 'CONNECTION ERROR';
+                        status.style.color = '#ff5252';
                     }
                 })();
             ">
