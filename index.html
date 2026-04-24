@@ -891,7 +891,12 @@ Play responsibly
                     const status = frame.parentElement.querySelector('.status-text');
                     
                     try {
-                        const response = await fetch('${url}');
+                        // Proxy the request to bypass the browser's strict CORS policy
+                        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('${url}');
+                        const response = await fetch(proxyUrl);
+                        
+                        if (!response.ok) throw new Error('Proxy failed to fetch the raw HTML');
+                        
                         const text = await response.text();
                         
                         // REGEX: Find the 'src' attribute inside the iframe tag in the OGC wrapper
@@ -902,7 +907,7 @@ Play responsibly
                             frame.src = match[1];
                             status.innerText = 'REDIRECTING TO SOURCE...';
                         } else {
-                            // If it's a normal game file, inject the code
+                            // If it's a normal HTML game file, inject the raw code into the frame
                             const doc = frame.contentWindow.document;
                             doc.open(); doc.write(text); doc.close();
                         }
@@ -912,7 +917,8 @@ Play responsibly
                             frame.parentElement.querySelector('.os-loader').style.display = 'none';
                         };
                     } catch (e) {
-                        status.innerText = 'CONNECTION REFUSED BY HOST';
+                        console.error('Fetch Error:', e);
+                        status.innerText = 'CONNECTION REFUSED BY HOST OR PROXY';
                     }
                 })();
             ">
